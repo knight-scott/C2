@@ -89,7 +89,7 @@ It is designed to support **temporary lab C2 servers**, lightweight redirectors,
 ## Usage
 
 ### Quickstart Lab Setup
-1. Flash minimal OS (Raspberry Pi OS Lite / Ubuntu Server minimal) on your Pi Zero 2.  
+1. Flash minimal OS (Raspberry Pi OS Lite) on your Pi Zero 2.  
 2. Clone this repository:
 ```bash
 git clone https://github.com/knight-scott/field-kit.git
@@ -99,7 +99,7 @@ cd field-kit
 3. Run the setup script:
 
 ```bash
-sudo bash setup.sh
+"bash setup.sh redirector | concentrator"
 ```
 
 4. Test redirector with lab C2 endpoints.
@@ -122,6 +122,10 @@ sudo bash setup.sh
 * Use external storage for logging or agent exfil data to reduce SD card wear.
 
 ---
+
+## TODO
+
+* Add Wireguard script to setup
 
 ## Contributing
 
