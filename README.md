@@ -39,7 +39,7 @@ This repository contains configuration, setup scripts, and deployment notes for 
 ### Tier 1 — Lab/Minimal Setup
 | Component | Quantity | Purpose | Estimated Cost |
 |-----------|----------|---------|----------------|
-| (Yuzuki Avaota-A1 SBC)[https://pine64.com/product/yuzuki-avaota-a1-single-board-computer-4gb-32gb/] | 1 | Primary C2 host | $54.95 |
+| Yuzuki Avaota-A1 SBC | 1 | Primary C2 host | $150-200 |
 | Raspberry Pi Zero 2 W | 1 | Redirector | $15-20 |
 | MicroSD cards (32GB+) | 2 | Storage | $10-15 each |
 | Power banks/adapters | 2 | Field power | $20-40 each |
@@ -133,7 +133,7 @@ sudo nano /etc/wireguard/wg0.conf
 ```
 
 Add peer sections:
-```ini
+```
 [Peer]
 # Redirector
 PublicKey = <redirector_public_key_from_setup>
@@ -166,10 +166,10 @@ sudo nano /etc/wireguard/wg0.conf
 ```
 
 Update the peer block:
-```ini
+```
 [Peer]
 PublicKey = <concentrator_public_key_from_setup>
-AllowedIPs = 10.44.0.1/32
+AllowedIPs = 10.44.0.0/24
 Endpoint = <concentrator_public_or_lan_ip>:51820
 PersistentKeepalive = 25
 ```

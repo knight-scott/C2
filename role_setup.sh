@@ -150,7 +150,7 @@ PostDown = iptables -D INPUT -p udp --dport ${WG_LISTEN_PORT} -j ACCEPT
 [Peer]
 # Populate this block on operator machine:
 # PublicKey = <concentrator_public_key>
-# AllowedIPs = 10.44.0.1/32
+# AllowedIPs = 10.44.0.0/24
 # Endpoint = <concentrator_lan_or_public_ip>:51820
 # PersistentKeepalive = 25
 
