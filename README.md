@@ -14,7 +14,7 @@ This repository contains configuration, setup scripts, and deployment notes for 
 - [ ] Flash 2x Pi Zero 2W with Raspberry Pi OS Lite 32-bit
 - [ ] Enable SSH, create `ops` user, disable password auth in Imager
 - [ ] Add your SSH public key to authorized_keys during imaging
-- [ ] Clone this repo to both devices: `git clone <repo-url>`
+- [ ] Clone this repo to both devices: `git clone https://github.com/knight-scott/C2.git`
 
 ### Device Setup (20 minutes)
 - [ ] **Concentrator Pi**: `sudo ./role_setup.sh concentrator`
