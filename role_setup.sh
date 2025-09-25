@@ -214,7 +214,7 @@ server {
 
     location /cdn {
         # Replace with your C2 VPN IP:port (e.g., http://10.44.0.10:8888)
-        proxy_pass http://10.44.0.50:8888;
+        proxy_pass http://10.44.0.10:8888;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
