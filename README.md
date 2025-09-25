@@ -114,7 +114,7 @@ ssh ops@<device-ip>
 ```bash
 # On each device
 sudo apt update
-git clone <your-repo-url> field-kit
+git clone https://github.com/knight-scott/C2.git field-kit
 cd field-kit
 sudo ./role_setup.sh concentrator  # or 'redirector'
 ```
