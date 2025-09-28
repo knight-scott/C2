@@ -41,8 +41,8 @@ DEBIAN_FRONTEND=noninteractive apt -y install \
 # Verify critical packages installed correctly
 echo "[*] Verifying package installation..."
 for pkg in wireguard fail2ban git golang-go nginx ruby; do
-    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-        echo "[!] ERROR: Package $pkg is missing or not fully installed"
+    if ! dpkg -l | grep -q "^ii.*$pkg"; then
+        echo "[!] ERROR: Package $pkg failed to install"
         exit 1
     fi
 done
@@ -105,10 +105,6 @@ sed -i 's/^#\?ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
 
 # Restart SSH to apply changes
 systemctl restart ssh
-echo "[*] SSH configuration hardened"
-echo "[*] Locking root account password..."
-passwd -l root
-echo "[*] Root account password locked"
 
 echo "[*] Configuring fail2ban..."
 cat > /etc/fail2ban/jail.local <<'FAIL2BAN_EOF'
@@ -129,36 +125,37 @@ FAIL2BAN_EOF
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-# === WireGuard Setup for C2 Server ===
-echo "[*] Setting up WireGuard for C2 server..."
-mkdir -p "$WG_DIR"
-chmod 700 "$WG_DIR"
+# WireGuard setup
+if ! is_completed "wireguard_configured"; then
+    echo "[*] Setting up WireGuard for C2 server..."
+    mkdir -p "$WG_DIR"
+    chmod 700 "$WG_DIR"
 
-PRIV_FILE="$WG_DIR/c2_server_private.key"
-PUB_FILE="$WG_DIR/c2_server_public.key"
-WG_LISTEN_PORT=51821  # Different from concentrator
-LOCAL_WG_ADDR="10.44.0.10/32"
+    PRIV_FILE="$WG_DIR/c2_server_private.key"
+    PUB_FILE="$WG_DIR/c2_server_public.key"
+    WG_LISTEN_PORT=51821  # Different from concentrator
+    LOCAL_WG_ADDR="10.44.0.10/32"
 
-if [[ ! -f "$PRIV_FILE" ]]; then
-    echo "[*] Generating WireGuard keypair for C2 server..."
-    umask 077
-    wg genkey | tee "$PRIV_FILE" | wg pubkey > "$PUB_FILE"
-    chmod 600 "$PRIV_FILE"
-    chmod 644 "$PUB_FILE"
-    chown root:root "$PRIV_FILE" "$PUB_FILE"
-else
-    echo "[*] Existing WireGuard keypair found."
-fi
+    if [[ ! -f "$PRIV_FILE" ]]; then
+        echo "[*] Generating WireGuard keypair for C2 server..."
+        umask 077
+        wg genkey | tee "$PRIV_FILE" | wg pubkey > "$PUB_FILE"
+        chmod 600 "$PRIV_FILE"
+        chmod 644 "$PUB_FILE"
+        chown root:root "$PRIV_FILE" "$PUB_FILE"
+    else
+        echo "[*] Existing WireGuard keypair found."
+    fi
 
-C2_PUB_KEY=$(cat "$PUB_FILE")
-echo ""
-echo "[*] C2 Server WireGuard Public Key (add this to concentrator):"
-echo "$C2_PUB_KEY"
-echo ""
+    C2_PUB_KEY=$(cat "$PUB_FILE")
+    echo ""
+    echo "[*] C2 Server WireGuard Public Key (add this to concentrator):"
+    echo "$C2_PUB_KEY"
+    echo ""
 
-# Create WireGuard config for C2 server
-WG_CONF="$WG_DIR/wg0.conf"
-cat > "$WG_CONF" <<EOF
+    # Create WireGuard config for C2 server
+    WG_CONF="$WG_DIR/wg0.conf"
+    cat > "$WG_CONF" <<EOF
 [Interface]
 Address = ${LOCAL_WG_ADDR}
 ListenPort = ${WG_LISTEN_PORT}
@@ -174,54 +171,82 @@ PostDown = true
 
 EOF
 
-chown root:root "$WG_CONF"
-chmod 600 "$WG_CONF"
-chattr +i "$WG_CONF"
+    chown root:root "$WG_CONF"
+    chmod 600 "$WG_CONF"
+    chattr +i "$WG_CONF"
 
-echo "[*] WireGuard config created at $WG_CONF (marked immutable)"
-
-# === Create C2 Directory Structure ===
-echo "[*] Creating C2 framework directories..."
-mkdir -p "$C2_DIR"
-mkdir -p "$SLIVER_DIR"
-mkdir -p "$BEEF_DIR"
-mkdir -p "$C2_DIR/logs"
-mkdir -p "$C2_DIR/data"
-chown -R "$USER":"$USER" "$C2_DIR"
-
-# === Install Sliver C2 Framework ===
-echo "[*] Installing Sliver C2 Framework..."
-cd "$SLIVER_DIR"
-
-# Download latest Sliver release
-SLIVER_VERSION=$(curl -s https://api.github.com/repos/BishopFox/sliver/releases/latest | jq -r '.tag_name')
-echo "[*] Installing Sliver version: $SLIVER_VERSION"
-
-# Download Sliver server for Linux ARM64 (Avaota-A1 is ARM64)
-ARCH="arm64"
-if [[ $(uname -m) == "x86_64" ]]; then
-    ARCH="amd64"
+    echo "[*] WireGuard config created at $WG_CONF (marked immutable)"
+    mark_completed "wireguard_configured"
+else
+    echo "[*] WireGuard configuration already completed, skipping..."
+    # Still need to get public key for display
+    PUB_FILE="$WG_DIR/c2_server_public.key"
+    if [[ -f "$PUB_FILE" ]]; then
+        C2_PUB_KEY=$(cat "$PUB_FILE")
+        echo "[*] C2 Server WireGuard Public Key: $C2_PUB_KEY"
+    fi
 fi
 
-echo "[*] Downloading Sliver server..."
-if ! wget -O sliver-server "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-server_linux"; then
-    echo "[!] ERROR: Failed to download Sliver server"
-    exit 1
+# C2 directory structure
+if ! is_completed "c2_directories_created"; then
+    echo "[*] Creating C2 framework directories..."
+    mkdir -p "$C2_DIR"
+    mkdir -p "$SLIVER_DIR"
+    mkdir -p "$BEEF_DIR"
+    mkdir -p "$C2_DIR/logs"
+    mkdir -p "$C2_DIR/data"
+    chown -R "$USER":"$USER" "$C2_DIR"
+    mark_completed "c2_directories_created"
+else
+    echo "[*] C2 directories already created, skipping..."
 fi
 
-chmod +x sliver-server
-chown "$USER":"$USER" sliver-server
+# Sliver installation
+if ! is_completed "sliver_installed"; then
+    echo "[*] Installing Sliver C2 Framework..."
+    cd "$SLIVER_DIR"
 
-# Verify download
-if [[ ! -x sliver-server ]]; then
-    echo "[!] ERROR: Sliver server not executable after download"
-    exit 1
-fi
+    # Download latest Sliver release
+    if command -v jq >/dev/null 2>&1; then
+        SLIVER_VERSION=$(curl -s https://api.github.com/repos/BishopFox/sliver/releases/latest | jq -r '.tag_name')
+        echo "[*] Installing Sliver version: $SLIVER_VERSION"
+    else
+        SLIVER_VERSION="latest"
+        echo "[*] Installing latest Sliver version (jq not available for version detection)"
+    fi
 
-echo "[*] Sliver server downloaded successfully"
+    # Download Sliver server for Linux ARM64
+    ARCH="arm64"
+    if [[ $(uname -m) == "x86_64" ]]; then
+        ARCH="amd64"
+    fi
 
-# Create Sliver service configuration
-cat > /etc/systemd/system/sliver.service <<EOF
+    echo "[*] Downloading Sliver server..."
+    if [[ "$SLIVER_VERSION" != "latest" ]]; then
+        DOWNLOAD_URL="https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-server_linux"
+    else
+        DOWNLOAD_URL="https://github.com/BishopFox/sliver/releases/latest/download/sliver-server_linux"
+    fi
+    
+    if ! wget -O sliver-server "$DOWNLOAD_URL"; then
+        echo "[!] ERROR: Failed to download Sliver server"
+        echo "[!] Try manual download or check internet connectivity"
+        exit 1
+    fi
+
+    chmod +x sliver-server
+    chown "$USER":"$USER" sliver-server
+
+    # Verify download
+    if [[ ! -x sliver-server ]]; then
+        echo "[!] ERROR: Sliver server not executable after download"
+        exit 1
+    fi
+
+    echo "[*] Sliver server downloaded successfully"
+
+    # Create Sliver service configuration
+    cat > /etc/systemd/system/sliver.service <<EOF
 [Unit]
 Description=Sliver C2 Server
 After=network.target
@@ -241,42 +266,59 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# === Install BeEF Framework ===
-echo "[*] Installing BeEF (Browser Exploitation Framework)..."
-cd "$BEEF_DIR"
-
-# Install BeEF dependencies
-echo "[*] Installing Ruby bundler..."
-if ! gem install bundler; then
-    echo "[!] ERROR: Failed to install bundler"
-    exit 1
+    systemctl daemon-reload
+    systemctl enable sliver
+    mark_completed "sliver_installed"
+else
+    echo "[*] Sliver installation already completed, skipping..."
 fi
 
-# Clone BeEF repository
-echo "[*] Cloning BeEF repository..."
-if ! git clone https://github.com/beefproject/beef.git .; then
-    echo "[!] ERROR: Failed to clone BeEF repository"
-    exit 1
-fi
+# BeEF installation
+if ! is_completed "beef_installed"; then
+    echo "[*] Installing BeEF (Browser Exploitation Framework)..."
+    cd "$BEEF_DIR"
 
-chown -R "$USER":"$USER" "$BEEF_DIR"
+    # Install BeEF dependencies
+    echo "[*] Installing Ruby bundler..."
+    if ! gem install bundler; then
+        echo "[!] ERROR: Failed to install bundler"
+        echo "[!] Check Ruby installation and try: gem install bundler --no-document"
+        exit 1
+    fi
 
-# Install BeEF as ops user with better error handling
-echo "[*] Installing BeEF dependencies (this may take several minutes)..."
-if ! sudo -u "$USER" bundle install; then
-    echo "[!] ERROR: BeEF bundle install failed"
-    echo "[!] This is often due to missing development headers"
-    echo "[!] Try: apt install libsqlite3-dev libssl-dev"
-    exit 1
-fi
+    # Clone BeEF repository if not already present
+    if [[ ! -f "beef" ]]; then
+        echo "[*] Cloning BeEF repository..."
+        if ! git clone https://github.com/beefproject/beef.git .; then
+            echo "[!] ERROR: Failed to clone BeEF repository"
+            echo "[!] Check internet connectivity and try manual clone"
+            exit 1
+        fi
+    else
+        echo "[*] BeEF repository already present"
+    fi
 
-echo "[*] BeEF installation completed successfully"
+    chown -R "$USER":"$USER" "$BEEF_DIR"
 
-# Create BeEF configuration
-sudo -u "$USER" cp config.yaml config.yaml.backup
+    # Install BeEF as ops user with better error handling
+    echo "[*] Installing BeEF dependencies (this may take several minutes)..."
+    if ! sudo -u "$USER" bundle install; then
+        echo "[!] ERROR: BeEF bundle install failed"
+        echo "[!] This is often due to missing development headers"
+        echo "[!] Required packages should be installed: libsqlite3-dev libssl-dev"
+        echo "[!] Try: sudo -u $USER bundle install --verbose"
+        exit 1
+    fi
 
-# Update BeEF config to bind to VPN interface
-sudo -u "$USER" tee config.yaml.local > /dev/null <<EOF
+    echo "[*] BeEF installation completed successfully"
+
+    # Create BeEF configuration
+    if [[ -f config.yaml && ! -f config.yaml.backup ]]; then
+        sudo -u "$USER" cp config.yaml config.yaml.backup
+    fi
+
+    # Update BeEF config to bind to VPN interface
+    sudo -u "$USER" tee config.yaml.local > /dev/null <<EOF
 beef:
     version: '0.5.4.0'
     debug: false
@@ -304,6 +346,41 @@ beef:
         passwd: "$(openssl rand -base64 12)"
         
     extension:
+        admin_ui:
+            enable: true
+        metasploit:
+            enable: false
+        social_engineering:
+            enable: true
+EOF
+
+    # Create BeEF service
+    cat > /etc/systemd/system/beef.service <<EOF
+[Unit]
+Description=BeEF Framework
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$BEEF_DIR
+ExecStart=/usr/bin/ruby beef -x -c config.yaml.local
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable beef
+    mark_completed "beef_installed"
+else
+    echo "[*] BeEF installation already completed, skipping..."
+fi
         admin_ui:
             enable: true
         metasploit:
@@ -341,41 +418,37 @@ cat > /etc/nginx/sites-available/c2-server <<'NGINX_EOF'
 
 # Bind only to the WireGuard interface (10.44.0.10)
 server {
-    listen 10.44.0.10:80;
-    server_name internal-api.knightsgambitsecurity.com;
-
-    # Restrict access to VPN subnet only
-    allow 10.44.0.0/24;
-    deny all;
-
+    listen 80;
+    server_name _;
+    
     # Security headers
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
-
-    # Sliver HTTP listener proxy (implant comms, operator RPC)
-    location /sliver {
-        proxy_pass http://127.0.0.1:8888/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+    
+    # Sliver HTTP listener proxy (bound to VPN interface)
+    location /sliver/ {
+        proxy_pass http://10.44.0.10:8888/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_buffering off;
     }
-
-    # BeEF hook (served to targets through redirector)
-    location /beef {
-        proxy_pass http://127.0.0.1:3000/;
-        proxy_http_version 1.1;
+    
+    # BeEF hook proxy (for serving hook.js)
+    location /beef/ {
+        proxy_pass http://10.44.0.10:3000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
     }
-
-    # Default decoy page
+    
+    # Default response - basic decoy page
     location / {
         root /var/www/html;
         index index.html;
@@ -383,20 +456,22 @@ server {
     }
 }
 
-# BeEF Admin UI – separate port, VPN-only
+# BeEF Admin UI - Only accessible from VPN
 server {
-    listen 10.44.0.10:3001;
-    server_name internal-api.knightsgambitsecurity.com;
-
+    listen 3001;
+    server_name _;
+    
+    # Restrict to VPN subnet only
     allow 10.44.0.0/24;
     deny all;
-
+    
     location / {
-        proxy_pass http://127.0.0.1:3000/;
-        proxy_http_version 1.1;
+        proxy_pass http://10.44.0.10:3000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
     }
 }
 NGINX_EOF
@@ -472,12 +547,12 @@ systemctl start sliver || echo "[!] Sliver service failed to start - check logs 
 systemctl start beef || echo "[!] BeEF service failed to start - check logs with 'journalctl -u beef'"
 
 # === Final Configuration ===
-echo "[*] Creating minimal status page..."
+echo "[*] Creating decoy web content..."
 cat > /var/www/html/index.html <<'HTML_EOF'
 <!DOCTYPE html>
 <html>
 <head>
-    <title>System Status</title>
+    <title>Server Status</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
@@ -487,11 +562,9 @@ cat > /var/www/html/index.html <<'HTML_EOF'
     </style>
 </head>
 <body>
-    <div class="status">
-        <h2>System Status</h2>
-        <p class="ok">✓ Services operational</p>
-        <p><small>Last check: $(date '+%Y-%m-%d %H:%M:%S')</small></p>
-    </div>
+    <h1>System Online</h1>
+    <p>Server is running normally.</p>
+    <p><small>Last updated: $(date)</small></p>
 </body>
 </html>
 HTML_EOF
@@ -504,16 +577,11 @@ echo "INSTALLED FRAMEWORKS:"
 echo "  - Sliver C2: $SLIVER_DIR/sliver-server"
 echo "  - BeEF: $BEEF_DIR"
 echo ""
-echo "NETWORK CONFIGURATION:"
-echo "  - VPN IP: 10.44.0.10/32"
-echo "  - WireGuard Port: 51821/udp"
-echo "  - Sliver HTTP: 127.0.0.1:8888 (proxied via /sliver)"
-echo "  - BeEF: 127.0.0.1:3000 (proxied via /beef)"
-echo "  - BeEF Admin: 10.44.0.10:3001 (VPN-only access)"
-echo ""
 echo "REDIRECTOR INTEGRATION:"
 echo "  - Redirector /api/v1/status → C2 /sliver → Sliver (127.0.0.1:8888)"
 echo "  - Redirector /resources/updates → C2 /beef → BeEF (127.0.0.1:3000)"
+echo "  - C2 binds only to VPN interface (10.44.0.10)"
+echo "  - Health check available at /health"
 echo ""
 echo "MANAGEMENT SCRIPTS:"
 echo "  - Status: $C2_DIR/c2-status.sh"
@@ -538,11 +606,10 @@ echo ""
 echo "5. Check service status: $C2_DIR/c2-status.sh"
 echo ""
 echo "SECURITY NOTES:"
-echo "[*] Security provided by:"
-echo "    - VPN network isolation (10.44.0.0/24 only)"
-echo "    - nginx IP restrictions (allow 10.44.0.0/24; deny all)"
-echo "    - SSH hardening + fail2ban"
-echo "    - Service binding to localhost/VPN interface only"
+echo "  - SSH hardened (keys only, no root login)"
+echo "  - fail2ban active for SSH protection"
+echo "  - C2 services only accessible via VPN"
+echo "  - Config files marked immutable with chattr +i"
 echo ""
 
 exit 0
