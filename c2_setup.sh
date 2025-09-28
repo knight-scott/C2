@@ -27,6 +27,7 @@ apt update && apt -y full-upgrade
 echo "[*] Installing base security and development packages..."
 DEBIAN_FRONTEND=noninteractive apt -y install \
     ufw fail2ban \
+    wireguard wireguard-tools \
     git curl wget unzip \
     build-essential \
     golang-go \
@@ -36,6 +37,17 @@ DEBIAN_FRONTEND=noninteractive apt -y install \
     nginx \
     htop tmux \
     jq
+
+# Verify critical packages installed correctly
+echo "[*] Verifying package installation..."
+for pkg in wireguard ufw fail2ban git golang-go nginx ruby; do
+    if ! dpkg -l | grep -q "^ii.*$pkg"; then
+        echo "[!] ERROR: Package $pkg failed to install"
+        exit 1
+    fi
+done
+
+echo "[*] All required packages installed successfully"
 
 # Ensure ops user exists and has proper SSH setup
 echo "[*] Configuring user accounts and SSH access..."
@@ -189,9 +201,22 @@ if [[ $(uname -m) == "x86_64" ]]; then
     ARCH="amd64"
 fi
 
-wget -O sliver-server "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-server_linux"
+echo "[*] Downloading Sliver server..."
+if ! wget -O sliver-server "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-server_linux"; then
+    echo "[!] ERROR: Failed to download Sliver server"
+    exit 1
+fi
+
 chmod +x sliver-server
 chown "$USER":"$USER" sliver-server
+
+# Verify download
+if [[ ! -x sliver-server ]]; then
+    echo "[!] ERROR: Sliver server not executable after download"
+    exit 1
+fi
+
+echo "[*] Sliver server downloaded successfully"
 
 # Create Sliver service configuration
 cat > /etc/systemd/system/sliver.service <<EOF
@@ -204,7 +229,7 @@ Wants=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$SLIVER_DIR
-ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10
+ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10 --lport 8888
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -219,14 +244,31 @@ echo "[*] Installing BeEF (Browser Exploitation Framework)..."
 cd "$BEEF_DIR"
 
 # Install BeEF dependencies
-gem install bundler
+echo "[*] Installing Ruby bundler..."
+if ! gem install bundler; then
+    echo "[!] ERROR: Failed to install bundler"
+    exit 1
+fi
 
 # Clone BeEF repository
-git clone https://github.com/beefproject/beef.git .
+echo "[*] Cloning BeEF repository..."
+if ! git clone https://github.com/beefproject/beef.git .; then
+    echo "[!] ERROR: Failed to clone BeEF repository"
+    exit 1
+fi
+
 chown -R "$USER":"$USER" "$BEEF_DIR"
 
-# Install BeEF as ops user
-sudo -u "$USER" bundle install
+# Install BeEF as ops user with better error handling
+echo "[*] Installing BeEF dependencies (this may take several minutes)..."
+if ! sudo -u "$USER" bundle install; then
+    echo "[!] ERROR: BeEF bundle install failed"
+    echo "[!] This is often due to missing development headers"
+    echo "[!] Try: apt install libsqlite3-dev libssl-dev"
+    exit 1
+fi
+
+echo "[*] BeEF installation completed successfully"
 
 # Create BeEF configuration
 sudo -u "$USER" cp config.yaml config.yaml.backup
@@ -303,9 +345,9 @@ server {
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
     
-    # Sliver HTTP listener proxy
+    # Sliver HTTP listener proxy (bound to VPN interface)
     location /sliver/ {
-        proxy_pass http://127.0.0.1:8888/;
+        proxy_pass http://10.44.0.10:8888/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -424,11 +466,6 @@ echo "[*] Starting services..."
 systemctl start sliver || echo "[!] Sliver service failed to start - check logs with 'journalctl -u sliver'"
 systemctl start beef || echo "[!] BeEF service failed to start - check logs with 'journalctl -u beef'"
 
-echo "[*] Verifying service bindings..."
-echo "Checking if services bind to VPN interface:"
-sleep 5
-ss -tlnp | grep -E "10.44.0.10.*(3000|8888)" || echo "[!] Services may not be bound to VPN IP"
-
 # === Final Configuration ===
 echo "[*] Creating decoy web content..."
 cat > /var/www/html/index.html <<'HTML_EOF'
@@ -492,5 +529,3 @@ echo "  - Config files marked immutable with chattr +i"
 echo ""
 
 exit 0
-
-# Add to the end of the C2 setup script
