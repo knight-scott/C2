@@ -12,24 +12,32 @@ This repository contains configuration, setup scripts, and deployment notes for 
 
 ### Pre-deployment (15 minutes)
 - [ ] Flash 2x Pi Zero 2W with Raspberry Pi OS Lite 32-bit
+- [ ] Flash 1x Avaota-A1 with Ubuntu 24.04 LTS (or AvaotaOS)
 - [ ] Enable SSH, create `ops` user, disable password auth in Imager
 - [ ] Add your SSH public key to authorized_keys during imaging
-- [ ] Clone this repo to both devices: `git clone https://github.com/knight-scott/C2.git`
+- [ ] Clone this repo to all devices: `git clone <repo-url>`
 
-### Device Setup (20 minutes)
+### Device Setup (30 minutes)
 - [ ] **Concentrator Pi**: `sudo ./role_setup.sh concentrator`
 - [ ] **Redirector Pi**: `sudo ./role_setup.sh redirector`
+- [ ] **C2 Server (Avaota-A1)**: `sudo ./c2_setup.sh`
 - [ ] Copy public keys between devices (displayed at end of each setup)
 
-### Network Configuration (10 minutes)
-- [ ] Edit `/etc/wireguard/wg0.conf` on both devices (use `chattr -i` first)
+### Network Configuration (15 minutes)
+- [ ] Edit `/etc/wireguard/wg0.conf` on all devices (use `chattr -i` first)
 - [ ] Add peer configurations and endpoints
-- [ ] Restart WireGuard: `systemctl restart wg-quick@wg0`
+- [ ] Restart WireGuard on all devices: `systemctl restart wg-quick@wg0`
 - [ ] Verify with `wg show` - should show handshakes and transfer bytes
 
-### Validation (5 minutes)
-- [ ] Test VPN connectivity: `ping 10.44.0.1` and `ping 10.44.0.2`
-- [ ] Test proxy path: `curl http://redirector-ip/cdn`
+### C2 Framework Setup (10 minutes)
+- [ ] Access BeEF Admin UI: `http://10.44.0.10:3001` (via VPN)
+- [ ] Start Sliver console: `/opt/c2/sliver/sliver-server console`
+- [ ] Test C2 connectivity through redirector proxy paths
+
+### Validation (10 minutes)
+- [ ] Test VPN connectivity: `ping 10.44.0.1`, `ping 10.44.0.2`, `ping 10.44.0.10`
+- [ ] Test obfuscated proxy paths: `curl http://redirector-ip/api/v1/status`
+- [ ] Test BeEF hook delivery: `curl http://redirector-ip/resources/updates`
 - [ ] Deploy to field positions and verify remote connectivity
 
 ---
@@ -114,7 +122,7 @@ ssh ops@<device-ip>
 ```bash
 # On each device
 sudo apt update
-git clone https://github.com/knight-scott/C2.git field-kit
+git clone <your-repo-url> field-kit
 cd field-kit
 sudo ./role_setup.sh concentrator  # or 'redirector'
 ```
@@ -166,7 +174,7 @@ sudo nano /etc/wireguard/wg0.conf
 ```
 
 Update the peer block:
-```
+```ini
 [Peer]
 PublicKey = <concentrator_public_key_from_setup>
 AllowedIPs = 10.44.0.0/24
@@ -201,10 +209,21 @@ sudo nano /etc/nginx/sites-available/redirector
 sudo systemctl restart nginx
 ```
 
-#### 3.3 Test Proxy Path
+#### 3.3 Test Full VPN and C2 Connectivity
 ```bash
-# From external network - should reach C2 through VPN
-curl -v http://<redirector-public-ip>/cdn
+# Test all VPN routes work properly
+ping 10.44.0.1  # laptop to concentrator
+ping 10.44.0.2  # laptop to redirector  
+ping 10.44.0.10 # laptop to C2 server
+ping 10.44.0.50 # C2 server to laptop (reverse connectivity)
+
+# Test obfuscated C2 endpoints via redirector
+curl http://<redirector-public-ip>/api/v1/status     # Sliver C2
+curl http://<redirector-public-ip>/resources/updates # BeEF hooks
+
+# Access C2 management interfaces via VPN
+# BeEF Admin UI: http://10.44.0.10:3001
+# Sliver Console: ssh ops@10.44.0.10, then /opt/c2/sliver/sliver-server console
 ```
 
 ---
@@ -248,14 +267,16 @@ sudo iptables -t nat -L POSTROUTING -v -n | grep MASQUERADE
 ip route get 8.8.8.8
 ```
 
-### Common Deployment Issues
+### Common Configuration Errors
 
 | Problem | Symptoms | Solution |
 |---------|----------|-----------|
+| Wrong AllowedIPs on redirector | VPN peers can't reach redirector through concentrator | Change redirector's AllowedIPs from `/32` to `/24` |
+| C2 server unreachable | Redirector proxy returns 502/503 | Check C2 services: `systemctl status sliver beef` |
+| BeEF won't start | Bundle install errors during setup | Install missing headers: `apt install libsqlite3-dev libssl-dev` |
 | SSH key auth failing | Password prompt appears | Re-flash SD card with correct SSH key |
 | WireGuard won't start | Service fails to start | Check `journalctl -u wg-quick@wg0` for syntax errors |
 | No internet on devices | Can ping VPN IPs but not internet | Check concentrator NAT rules and uplink |
-| Proxy not working | 502/503 errors on `/cdn` path | Verify C2 is listening on specified port |
 | Can't edit wg0.conf | Permission denied | Use `chattr -i` before editing |
 
 ---
@@ -284,23 +305,44 @@ ip route get 8.8.8.8
 
 ---
 
+## Post-Setup Verification Checklist
+
+After completing the setup, verify the entire infrastructure is working:
+
+- [ ] `wg show` on all devices shows recent handshakes
+- [ ] All devices can ping each other via VPN IPs (10.44.0.1, 10.44.0.2, 10.44.0.10, 10.44.0.50)
+- [ ] SSH works between all VPN devices: `ssh ops@10.44.0.X`
+- [ ] Internet access works through concentrator (if configured for NAT)
+- [ ] Obfuscated proxy paths work: `/api/v1/status` and `/resources/updates`
+- [ ] C2 frameworks are accessible via VPN:
+  - BeEF Admin UI: `http://10.44.0.10:3001`
+  - Sliver Console: `/opt/c2/sliver/sliver-server console`
+- [ ] Redirector presents believable business website at root URL
+
 ## Security Checklists
 
 ### Pre-Deployment Security
-- [ ] All default passwords changed
+- [ ] All default passwords changed and default users removed (`avaota` user, etc.)
 - [ ] SSH keys unique per engagement  
 - [ ] WireGuard keys generated on-device (never transmitted)
 - [ ] Configs marked immutable (`chattr +i`)
 - [ ] fail2ban enabled and configured
 - [ ] UFW baseline applied
-
-### Post-Engagement Cleanup
+- [ ] Root account password locked (`passwd -l root`)
 - [ ] Wipe SD cards or re-image completely
 - [ ] Generate new SSH keys for next engagement
 - [ ] Clear any cached credentials from operators' machines
 - [ ] Document lessons learned and config changes needed
 
-### Operational Security
+### Configuration Gotchas
+- [ ] Redirector AllowedIPs must be `10.44.0.0/24`, not `10.44.0.1/32`
+- [ ] C2 server nginx paths must match redirector proxy destinations exactly
+- [ ] UFW can block VPN traffic even when WireGuard handshakes work
+- [ ] Missing `/32` suffix in concentrator peer configs breaks routing
+- [ ] Default system users (avaota) should be removed for security
+- [ ] BeEF requires development headers: `libsqlite3-dev libssl-dev`
+
+### Post-Engagement Cleanup
 - [ ] Concentrator never directly exposed to internet
 - [ ] C2 server only accessible via VPN overlay
 - [ ] Redirectors present believable decoy content
@@ -342,8 +384,15 @@ sudo journalctl -u wg-quick@wg0 -f
 sudo tail -f /var/log/nginx/access.log
 sudo tail -f /var/log/nginx/error.log  
 
+# C2 framework logs
+sudo journalctl -u sliver -f
+sudo journalctl -u beef -f
+
 # fail2ban status
 sudo fail2ban-client status sshd
+
+# C2 server status script
+/opt/c2/c2-status.sh
 ```
 
 ---
