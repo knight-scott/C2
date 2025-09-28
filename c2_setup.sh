@@ -26,7 +26,7 @@ apt update && apt -y full-upgrade
 
 echo "[*] Installing base security and development packages..."
 DEBIAN_FRONTEND=noninteractive apt -y install \
-    ufw fail2ban \
+    fail2ban \
     wireguard wireguard-tools \
     git curl wget unzip \
     build-essential \
@@ -40,9 +40,9 @@ DEBIAN_FRONTEND=noninteractive apt -y install \
 
 # Verify critical packages installed correctly
 echo "[*] Verifying package installation..."
-for pkg in wireguard ufw fail2ban git golang-go nginx ruby; do
-    if ! dpkg -l | grep -q "^ii.*$pkg"; then
-        echo "[!] ERROR: Package $pkg failed to install"
+for pkg in wireguard fail2ban git golang-go nginx ruby; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        echo "[!] ERROR: Package $pkg is missing or not fully installed"
         exit 1
     fi
 done
@@ -109,28 +109,6 @@ echo "[*] SSH configuration hardened"
 echo "[*] Locking root account password..."
 passwd -l root
 echo "[*] Root account password locked"
-
-echo "[*] Configuring UFW firewall..."
-# Reset UFW to clean state
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-
-# Allow SSH
-ufw allow ssh
-
-# Allow WireGuard (C2 will be a VPN peer)
-ufw allow 51821/udp  # Use different port from concentrator
-
-# Allow common C2 ports (will be restricted to VPN traffic via nginx proxy)
-# Sliver default ports: 80, 443, 8888, 31337
-# BeEF default ports: 3000
-
-# Note: These will be proxied through nginx and only accessible via VPN
-ufw allow 80/tcp
-ufw allow 443/tcp
-
-ufw --force enable
 
 echo "[*] Configuring fail2ban..."
 cat > /etc/fail2ban/jail.local <<'FAIL2BAN_EOF'
@@ -560,11 +538,11 @@ echo ""
 echo "5. Check service status: $C2_DIR/c2-status.sh"
 echo ""
 echo "SECURITY NOTES:"
-echo "  - SSH hardened (keys only, no root login)"
-echo "  - UFW enabled (SSH, WG, HTTP/HTTPS only)"
-echo "  - fail2ban active for SSH protection"
-echo "  - C2 services only accessible via VPN"
-echo "  - Config files marked immutable with chattr +i"
+echo "[*] Security provided by:"
+echo "    - VPN network isolation (10.44.0.0/24 only)"
+echo "    - nginx IP restrictions (allow 10.44.0.0/24; deny all)"
+echo "    - SSH hardening + fail2ban"
+echo "    - Service binding to localhost/VPN interface only"
 echo ""
 
 exit 0

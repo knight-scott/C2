@@ -51,9 +51,21 @@ systemctl restart ssh
 echo "[*] Installing packages: ufw fail2ban wireguard"
 DEBIAN_FRONTEND=noninteractive apt -y install ufw fail2ban wireguard
 
+# Verify install
+for pkg in ufw fail2ban wireguard; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        echo "[!] ERROR: Package $pkg is missing or not fully installed"
+        exit 1
+    fi
+done
+
 # nginx only for redirector role
 if [[ "$ROLE" == "redirector" ]]; then
   apt -y install nginx
+  if ! dpkg -s nginx >/dev/null 2>&1; then
+      echo "[!] ERROR: nginx failed to install"
+      exit 1
+  fi
 fi
 
 echo "[*] Configure UFW baseline (simple firewall, no NAT integration)..."
