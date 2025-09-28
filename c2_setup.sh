@@ -229,7 +229,7 @@ Wants=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$SLIVER_DIR
-ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10 --lport 8888
+ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10 --lport 8888 --lport 8888
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -467,18 +467,26 @@ systemctl start sliver || echo "[!] Sliver service failed to start - check logs 
 systemctl start beef || echo "[!] BeEF service failed to start - check logs with 'journalctl -u beef'"
 
 # === Final Configuration ===
-echo "[*] Creating decoy web content..."
+echo "[*] Creating minimal status page..."
 cat > /var/www/html/index.html <<'HTML_EOF'
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Server Status</title>
+    <title>System Status</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: monospace; background: #f0f0f0; margin: 40px; }
+        .status { background: white; padding: 20px; border: 1px solid #ddd; }
+        .ok { color: green; }
+    </style>
 </head>
 <body>
-    <h1>System Online</h1>
-    <p>Server is running normally.</p>
-    <p><small>Last updated: $(date)</small></p>
+    <div class="status">
+        <h2>System Status</h2>
+        <p class="ok">✓ Services operational</p>
+        <p><small>Last check: $(date '+%Y-%m-%d %H:%M:%S')</small></p>
+    </div>
 </body>
 </html>
 HTML_EOF
@@ -494,9 +502,13 @@ echo ""
 echo "NETWORK CONFIGURATION:"
 echo "  - VPN IP: 10.44.0.10/32"
 echo "  - WireGuard Port: 51821/udp"
-echo "  - Sliver HTTP: 127.0.0.1:8888 (proxied via /sliver/)"
-echo "  - BeEF: 10.44.0.10:3000 (proxied via /beef/)"
+echo "  - Sliver HTTP: 127.0.0.1:8888 (proxied via /sliver)"
+echo "  - BeEF: 127.0.0.1:3000 (proxied via /beef)"
 echo "  - BeEF Admin: 10.44.0.10:3001 (VPN-only access)"
+echo ""
+echo "REDIRECTOR INTEGRATION:"
+echo "  - Redirector /api/v1/status → C2 /sliver → Sliver (127.0.0.1:8888)"
+echo "  - Redirector /resources/updates → C2 /beef → BeEF (127.0.0.1:3000)"
 echo ""
 echo "MANAGEMENT SCRIPTS:"
 echo "  - Status: $C2_DIR/c2-status.sh"
