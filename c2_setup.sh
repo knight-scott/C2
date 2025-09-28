@@ -70,6 +70,26 @@ else
     echo "[!] Please add SSH public keys to $AUTHORIZED_KEYS manually"
 fi
 
+# Remove default avaota user for security
+echo "[*] Removing default avaota user for security..."
+if id -u "avaota" >/dev/null 2>&1; then
+    # Kill any processes owned by avaota user
+    pkill -u avaota || true
+    # Remove the user and home directory
+    userdel -r avaota
+    echo "[*] Avaota user removed successfully"
+else
+    echo "[*] Avaota user not found (already removed or never existed)"
+fi
+
+# Disable unused user accounts
+echo "[*] Disabling other system accounts..."
+for user in games news uucp proxy www-data backup list irc gnats; do
+    if id -u "$user" >/dev/null 2>&1; then
+        usermod -s /usr/sbin/nologin "$user" 2>/dev/null || true
+    fi
+done
+
 echo "[*] Hardening SSH configuration..."
 # Backup original config
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
@@ -85,6 +105,10 @@ sed -i 's/^#\?ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
 
 # Restart SSH to apply changes
 systemctl restart ssh
+echo "[*] SSH configuration hardened"
+echo "[*] Locking root account password..."
+passwd -l root
+echo "[*] Root account password locked"
 
 echo "[*] Configuring UFW firewall..."
 # Reset UFW to clean state
@@ -229,7 +253,7 @@ Wants=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$SLIVER_DIR
-ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10 --lport 8888 --lport 8888
+ExecStart=$SLIVER_DIR/sliver-server daemon --lhost 10.44.0.10 --lport 8888
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -337,38 +361,43 @@ cat > /etc/nginx/sites-available/c2-server <<'NGINX_EOF'
 # C2 Server Nginx Configuration
 # Proxies external requests to internal C2 frameworks
 
+# Bind only to the WireGuard interface (10.44.0.10)
 server {
-    listen 80;
-    server_name _;
-    
+    listen 10.44.0.10:80;
+    server_name internal-api.knightsgambitsecurity.com;
+
+    # Restrict access to VPN subnet only
+    allow 10.44.0.0/24;
+    deny all;
+
     # Security headers
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
-    
-    # Sliver HTTP listener proxy (bound to VPN interface)
+
+    # Sliver HTTP listener proxy (implant comms, operator RPC)
     location /sliver/ {
-        proxy_pass http://10.44.0.10:8888/;
+        proxy_pass http://127.0.0.1:8888/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
         proxy_buffering off;
     }
-    
-    # BeEF hook proxy (for serving hook.js)
+
+    # BeEF hook (served to targets through redirector)
     location /beef/ {
-        proxy_pass http://10.44.0.10:3000/;
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
     }
-    
-    # Default response - basic decoy page
+
+    # Default decoy page
     location / {
         root /var/www/html;
         index index.html;
@@ -376,22 +405,20 @@ server {
     }
 }
 
-# BeEF Admin UI - Only accessible from VPN
+# BeEF Admin UI – separate port, VPN-only
 server {
-    listen 3001;
-    server_name _;
-    
-    # Restrict to VPN subnet only
+    listen 10.44.0.10:3001;
+    server_name internal-api.knightsgambitsecurity.com;
+
     allow 10.44.0.0/24;
     deny all;
-    
+
     location / {
-        proxy_pass http://10.44.0.10:3000/;
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
     }
 }
 NGINX_EOF

