@@ -15,7 +15,7 @@ This repository contains configuration, setup scripts, and deployment notes for 
 - [ ] Flash 1x Avaota-A1 with Ubuntu 24.04 LTS (or AvaotaOS)
 - [ ] Enable SSH, create `ops` user, disable password auth in Imager
 - [ ] Add your SSH public key to authorized_keys during imaging
-- [ ] Clone this repo to all devices: `git clone <repo-url>`
+- [ ] Clone this repo to all devices: `git clone https://github.com/knight-scott/C2.git`
 
 ### Device Setup (30 minutes)
 - [ ] **Concentrator Pi**: `sudo ./role_setup.sh concentrator`
@@ -122,7 +122,7 @@ ssh ops@<device-ip>
 ```bash
 # On each device
 sudo apt update
-git clone <your-repo-url> field-kit
+git clone https://github.com/knight-scott/C2.git field-kit
 cd field-kit
 sudo ./role_setup.sh concentrator  # or 'redirector'
 ```
