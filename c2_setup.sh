@@ -375,7 +375,7 @@ server {
     add_header X-Content-Type-Options nosniff;
 
     # Sliver HTTP listener proxy (implant comms, operator RPC)
-    location /sliver/ {
+    location /sliver {
         proxy_pass http://127.0.0.1:8888/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -388,7 +388,7 @@ server {
     }
 
     # BeEF hook (served to targets through redirector)
-    location /beef/ {
+    location /beef {
         proxy_pass http://127.0.0.1:3000/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
