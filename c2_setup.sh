@@ -418,37 +418,41 @@ cat > /etc/nginx/sites-available/c2-server <<'NGINX_EOF'
 
 # Bind only to the WireGuard interface (10.44.0.10)
 server {
-    listen 80;
-    server_name _;
-    
+    listen 10.44.0.10:80;
+    server_name internal-api.knightsgambitsecurity.com;
+
+    # Restrict access to VPN subnet only
+    allow 10.44.0.0/24;
+    deny all;
+
     # Security headers
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
-    
-    # Sliver HTTP listener proxy (bound to VPN interface)
-    location /sliver/ {
-        proxy_pass http://10.44.0.10:8888/;
+
+    # Sliver HTTP listener proxy (implant comms, operator RPC)
+    location /sliver {
+        proxy_pass http://127.0.0.1:8888/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
         proxy_buffering off;
     }
-    
-    # BeEF hook proxy (for serving hook.js)
-    location /beef/ {
-        proxy_pass http://10.44.0.10:3000/;
+
+    # BeEF hook (served to targets through redirector)
+    location /beef {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
     }
-    
-    # Default response - basic decoy page
+
+    # Default decoy page
     location / {
         root /var/www/html;
         index index.html;
@@ -456,22 +460,20 @@ server {
     }
 }
 
-# BeEF Admin UI - Only accessible from VPN
+# BeEF Admin UI – separate port, VPN-only
 server {
-    listen 3001;
-    server_name _;
-    
-    # Restrict to VPN subnet only
+    listen 10.44.0.10:3001;
+    server_name internal-api.knightsgambitsecurity.com;
+
     allow 10.44.0.0/24;
     deny all;
-    
+
     location / {
-        proxy_pass http://10.44.0.10:3000/;
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
     }
 }
 NGINX_EOF
