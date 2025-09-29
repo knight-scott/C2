@@ -12,6 +12,7 @@ C2_DIR="/opt/c2"
 SLIVER_DIR="$C2_DIR/sliver"
 BEEF_DIR="$C2_DIR/beef"
 STATE_DIR="/var/lib/c2_setup"
+CRITICAL_PKG_FAILURE=0
 mkdir -p "$STATE_DIR"
 
 # ----- helper functions -----
