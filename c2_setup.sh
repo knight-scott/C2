@@ -8,6 +8,7 @@ USER="ops"
 SSH_DIR="/home/$USER/.ssh"
 AUTHORIZED_KEYS="$SSH_DIR/authorized_keys"
 WG_DIR="/etc/wireguard"
+WG_CONF="$WG_DIR/wg0.conf"
 C2_DIR="/opt/c2"
 SLIVER_DIR="$C2_DIR/sliver"
 BEEF_DIR="$C2_DIR/beef"
@@ -266,7 +267,6 @@ PostDown = true
 # AllowedIPs = 10.44.0.0/24
 # Endpoint = <concentrator_public_or_lan_ip>:51820
 # PersistentKeepalive = 25
-
 EOF
 
     chown root:root "$WG_CONF"
