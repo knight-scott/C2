@@ -167,18 +167,19 @@ for user in games news uucp proxy www-data backup list irc gnats; do
     fi
 done
 
+# === SSH Hardening ===
 log "Hardening SSH configuration..."
-# Backup original config
-cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+if [[ -f /etc/ssh/sshd_config ]]; then
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup || true
+fi
 
-# Apply security settings
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/^#\?AuthorizedKeysFile.*/AuthorizedKeysFile .ssh\/authorized_keys/' /etc/ssh/sshd_config
-sed -i 's/^#\?MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
-sed -i 's/^#\?ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
-sed -i 's/^#\?ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?AuthorizedKeysFile.*/AuthorizedKeysFile .ssh\/authorized_keys/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config || true
+sed -i 's/^#\?ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config || true
 
 # Restart SSH to apply changes (guarded)
 if systemctl list-unit-files | grep -q "^ssh"; then
@@ -207,8 +208,8 @@ maxretry = 3
 bantime = 7200
 FAIL2BAN_EOF
 
-systemctl enable fail2ban || warn "Failed to enable fail2ban"
-systemctl restart fail2ban || warn "Failed to restart fail2ban - check 'journalctl -u fail2ban'"
+    systemctl enable fail2ban || warn "Failed to enable fail2ban"
+    systemctl restart fail2ban || warn "Failed to restart fail2ban - check 'journalctl -u fail2ban'"
     log "fail2ban configured and started"
 else
     warn "fail2ban package not installed; skipping fail2ban configuration"
@@ -491,7 +492,7 @@ server {
     add_header X-Content-Type-Options nosniff;
 
     # Sliver HTTP listener proxy (implant comms, operator RPC)
-    location /sliver/ {
+    location /sliver {
         proxy_pass http://127.0.0.1:8888/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -504,7 +505,7 @@ server {
     }
 
     # BeEF hook (served to targets through redirector)
-    location /beef/ {
+    location /beef {
         proxy_pass http://127.0.0.1:3000/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -653,6 +654,8 @@ echo ""
 echo "REDIRECTOR INTEGRATION:"
 echo "  - Redirector /api/v1/status → C2 /sliver → Sliver (127.0.0.1:8888)"
 echo "  - Redirector /resources/updates → C2 /beef → BeEF (127.0.0.1:3000)"
+echo "  - C2 binds only to VPN interface (10.44.0.10)"
+echo "  - Health check available at /health"
 echo ""
 echo "MANAGEMENT SCRIPTS:"
 echo "  - Status: $C2_DIR/c2-status.sh"
