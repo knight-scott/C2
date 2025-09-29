@@ -595,7 +595,7 @@ echo "Stopping C2 services..."
 systemctl stop sliver || true
 systemctl stop beef || true
 echo "C2 services stopped."
-START_EOF
+STOP_EOF
 
 chmod +x "$C2_DIR"/*.sh || true
 chown "$USER":"$USER" "$C2_DIR"/*.sh || true
